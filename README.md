@@ -1,8 +1,8 @@
-# kilitsiz
+# latchless
 
 Lock-free queues and stacks for Rust, with their own epoch-based memory reclamation.
 
-*Kilitsiz* is Turkish for "without a lock".
+A latch is what database engineers call a short lock on an in-memory structure. The structures here take none.
 
 ## Status
 
@@ -35,7 +35,7 @@ Planning. The repository holds the design and the roadmap; no functional code ye
 
 ## Should you use it
 
-Probably not: [crossbeam](https://github.com/crossbeam-rs/crossbeam) is older, faster in places and far more widely tested. kilitsiz exists to show each algorithm in a small amount of code where every atomic ordering and every `unsafe` block carries its reason.
+Probably not: [crossbeam](https://github.com/crossbeam-rs/crossbeam) is older, faster in places and far more widely tested. latchless exists to show each algorithm in a small amount of code where every atomic ordering and every `unsafe` block carries its reason.
 
 ## Licence
 

@@ -7,8 +7,8 @@ Bug reports, failing test cases and fixes are welcome. A pull request that adds 
 You need a stable Rust toolchain (1.85 or newer) and git.
 
 ```
-git clone https://github.com/tunahanaliozturk/kilitsiz
-cd kilitsiz
+git clone https://github.com/tunahanaliozturk/latchless
+cd latchless
 cargo test
 ```
 

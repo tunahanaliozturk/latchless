@@ -1,4 +1,4 @@
-# kilitsiz design
+# latchless design
 
 This document is the contract. Code that disagrees with it is a bug in one of the two, and the fix says which.
 
@@ -11,7 +11,7 @@ This document is the contract. Code that disagrees with it is a bug in one of th
 
 ## Non-goals
 
-- Beating crossbeam. Matching it within a stated margin is the aim; where kilitsiz is slower, the benchmarks say so.
+- Beating crossbeam. Matching it within a stated margin is the aim; where latchless is slower, the benchmarks say so.
 - A concurrent hash map, skip list or channel with blocking and `select`. They are listed for later.
 - Wait-freedom, except for the single-producer single-consumer ring where it comes for free.
 - Async wakers. The structures are non-blocking primitives; a `try_push` that fails returns the value.

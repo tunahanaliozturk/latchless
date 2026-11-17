@@ -9,7 +9,7 @@ Each milestone ends with a test that has to pass. A milestone is not done becaus
 | M2 | Bounded MPMC queue | `mpmc::ArrayQueue`. Linearizability checker for queue histories. | loom passes with two producers and two consumers. Recorded stress histories are linearizable. Wrap-around and full/empty edges covered by proptest. |
 | M3 | Epoch reclamation | `epoch`: participants, pin and guard, deferred destruction, collection. `std` and no-`std` participant handling. | loom finds no use after free with a reader pinned across a retire. A variant that frees one epoch early is rejected. Every retired node is freed by the time all handles are dropped. |
 | M4 | Unbounded structures | `Stack` (Treiber) and `Queue` (Michael-Scott) on `epoch`. Compile-fail tests for `Send` and `Sync` bounds. | loom, miri and ThreadSanitizer clean. Histories linearizable. No leak and no double drop with panicking element types. |
-| M5 | Numbers | criterion benchmarks against crossbeam, rtrb and mutex baselines, 1 to 16 threads. One round of tuning from the results. | `docs/benchmarks.md` reproducible from the listed commands, including the cases where kilitsiz loses. |
+| M5 | Numbers | criterion benchmarks against crossbeam, rtrb and mutex baselines, 1 to 16 threads. One round of tuning from the results. | `docs/benchmarks.md` reproducible from the listed commands, including the cases where latchless loses. |
 | M6 | Release | Rustdoc with an ordering argument per structure, examples, README with measured results. | `cargo doc` has no missing item. Tag v0.1.0 and publish to crates.io. |
 
 ## Order of work inside a milestone

@@ -1,11 +1,11 @@
 [package]
-name = "kilitsiz"
+name = "latchless"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Lock-free queues and stacks with their own epoch-based reclamation, model-checked with loom"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/tunahanaliozturk/kilitsiz"
+repository = "https://github.com/tunahanaliozturk/latchless"
 readme = "README.md"
 keywords = ["lock-free", "concurrency", "queue", "atomic", "no_std"]
 categories = ["concurrency", "data-structures", "no-std"]
