@@ -17,9 +17,23 @@ unsafe_op_in_unsafe_fn = "deny"
 missing_docs = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+unused_qualifications = "warn"
+unused_lifetimes = "warn"
+trivial_numeric_casts = "warn"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+expect_used = "warn"
+panic = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+clone_on_ref_ptr = "warn"
+unimplemented = "warn"
 undocumented_unsafe_blocks = "deny"
 missing_safety_doc = "deny"
 multiple_unsafe_ops_per_block = "deny"
