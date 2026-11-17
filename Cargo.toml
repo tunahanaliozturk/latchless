@@ -1,0 +1,35 @@
+[package]
+name = "kilitsiz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Lock-free queues and stacks with their own epoch-based reclamation, model-checked with loom"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tunahanaliozturk/kilitsiz"
+readme = "README.md"
+keywords = ["lock-free", "concurrency", "queue", "atomic", "no_std"]
+categories = ["concurrency", "data-structures", "no-std"]
+exclude = ["/.github", "/docs"]
+
+[lints.rust]
+# This crate needs unsafe. The rules for it are in docs/adr/0001.
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+multiple_unsafe_ops_per_block = "deny"
+cast_possible_truncation = "warn"
+cast_lossless = "warn"
+dbg_macro = "warn"
+explicit_iter_loop = "warn"
+manual_let_else = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+todo = "warn"
+unwrap_used = "warn"
