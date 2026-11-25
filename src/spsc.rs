@@ -344,3 +344,53 @@ impl<T> fmt::Debug for Consumer<T> {
             .finish_non_exhaustive()
     }
 }
+
+/// Negative `Send` and `Sync` checks (docs/design.md, "Rules for unsafe").
+///
+/// Each doctest is a `compile_fail` for one reason only. `E0277` pins the failure
+/// to an unmet trait bound, so an unrelated compile error cannot make one pass.
+#[cfg(doctest)]
+mod negative_checks {
+    /// `Producer<Rc<()>>` is not `Send`, because `Rc<()>` is not.
+    ///
+    /// ```compile_fail,E0277
+    /// use latchless::spsc::Producer;
+    /// use std::rc::Rc;
+    ///
+    /// fn assert_send<T: Send>() {}
+    /// assert_send::<Producer<Rc<()>>>();
+    /// ```
+    fn producer_needs_t_send() {}
+
+    /// `Consumer<Rc<()>>` is not `Send`, because `Rc<()>` is not.
+    ///
+    /// ```compile_fail,E0277
+    /// use latchless::spsc::Consumer;
+    /// use std::rc::Rc;
+    ///
+    /// fn assert_send<T: Send>() {}
+    /// assert_send::<Consumer<Rc<()>>>();
+    /// ```
+    fn consumer_needs_t_send() {}
+
+    /// `Producer<u8>` is not `Sync`: it is `Send`, so it can move to another
+    /// thread, but two threads cannot share one.
+    ///
+    /// ```compile_fail,E0277
+    /// use latchless::spsc::Producer;
+    ///
+    /// fn assert_sync<T: Sync>() {}
+    /// assert_sync::<Producer<u8>>();
+    /// ```
+    fn producer_is_not_sync() {}
+
+    /// `Consumer<u8>` is not `Sync`, for the same reason.
+    ///
+    /// ```compile_fail,E0277
+    /// use latchless::spsc::Consumer;
+    ///
+    /// fn assert_sync<T: Sync>() {}
+    /// assert_sync::<Consumer<u8>>();
+    /// ```
+    fn consumer_is_not_sync() {}
+}
