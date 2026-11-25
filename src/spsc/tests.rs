@@ -63,6 +63,12 @@ fn a_zero_capacity_ring_is_always_full_and_always_empty() {
 }
 
 #[test]
+#[should_panic(expected = "capacity must be at most")]
+fn a_capacity_whose_doubled_range_overflows_is_refused() {
+    let _ = RingBuffer::<()>::new(usize::MAX / 2 + 1);
+}
+
+#[test]
 fn zero_sized_values_are_counted_like_any_other() {
     let (mut producer, mut consumer) = RingBuffer::new(3);
     for _ in 0..3 {

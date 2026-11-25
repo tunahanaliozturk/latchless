@@ -71,8 +71,9 @@ impl<T> RingBuffer<T> {
     ///
     /// # Panics
     ///
-    /// If the slots need more than `isize::MAX` bytes, the same as
-    /// `Vec::with_capacity`.
+    /// If `capacity` is greater than `usize::MAX / 2`, because the positions run
+    /// up to twice the capacity. Also if the slots need more than `isize::MAX`
+    /// bytes, the same as `Vec::with_capacity`.
     ///
     /// # Examples
     ///
@@ -105,8 +106,13 @@ impl<T> RingBuffer<T> {
     )]
     #[must_use = "the ring is freed when both handles are dropped"]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        // Building the slots takes `capacity` steps, also for a zero-sized `T`, so
-        // `2 * capacity` in `next` cannot overflow in any run that gets past this.
+        // This assert is what makes `2 * capacity` in `next` and `len` safe from
+        // overflow. Building the slots below does not, because for a zero-sized `T`
+        // it allocates nothing and need not stop at a size that fits.
+        assert!(
+            capacity <= usize::MAX / 2,
+            "capacity must be at most usize::MAX / 2, because positions run up to twice the capacity"
+        );
         let slots = iter::repeat_with(|| UnsafeCell::new(MaybeUninit::uninit()))
             .take(capacity)
             .collect();
