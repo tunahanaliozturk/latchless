@@ -16,6 +16,11 @@ exclude = ["/.github", "/docs", "/scripts"]
 [target.'cfg(loom)'.dev-dependencies]
 loom = "0.7.3"
 
+# Generated operation sequences for the sequential model tests. No default
+# features: no forking, no timeouts, no failure files, fewer crates.
+[dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+
 [lints.rust]
 # This crate needs unsafe. The rules for it are in docs/adr/0001.
 unsafe_op_in_unsafe_fn = "deny"
@@ -23,7 +28,7 @@ unsafe_op_in_unsafe_fn = "deny"
 # variant on purpose (docs/adr/0003).
 unexpected_cfgs = { level = "warn", check-cfg = [
   "cfg(loom)",
-  'cfg(latchless_mutation, values("spsc_relaxed_publish"))',
+  'cfg(latchless_mutation, values("spsc_relaxed_publish", "mpmc_relaxed_publish"))',
 ] }
 missing_docs = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
