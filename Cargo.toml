@@ -9,7 +9,7 @@ repository = "https://github.com/tunahanaliozturk/latchless"
 readme = "README.md"
 keywords = ["lock-free", "concurrency", "queue", "atomic", "no_std"]
 categories = ["concurrency", "data-structures", "no-std"]
-exclude = ["/.github", "/docs"]
+exclude = ["/.github", "/docs", "/scripts"]
 
 # loom is only built when the crate is compiled with `--cfg loom`, and only for
 # the crate's own unit tests. The shipped crate has no dependencies.

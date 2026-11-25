@@ -67,16 +67,7 @@ jobs:
       - name: the weakened ring compiles
         run: cargo test --lib --release --no-run
       - name: loom rejects the weakened ring
-        run: |
-          set +e
-          timeout 600 cargo test --lib --release spsc::loom_tests
-          code=$?
-          if [ "$code" -eq 101 ]; then
-            echo "loom rejected the weakened ring, as it should"
-            exit 0
-          fi
-          echo "expected the loom tests to fail (exit 101), got exit $code"
-          exit 1
+        run: bash scripts/expect-loom-failure.sh spsc::loom_tests
 
   miri:
     runs-on: ubuntu-latest
