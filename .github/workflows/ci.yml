@@ -42,6 +42,76 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features
 
+  # Every interleaving of the small scenarios in src/*/loom_tests.rs.
+  loom:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: --cfg loom -D warnings
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --lib --release
+
+  # The ring with its publishing store weakened to Relaxed on purpose. It has to
+  # compile, and loom has to fail on it; a pass means the loom tests have gone
+  # blind (docs/adr/0003-known-wrong-variants.md).
+  loom-rejects-known-wrong:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: --cfg loom --cfg latchless_mutation="spsc_relaxed_publish"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: the weakened ring compiles
+        run: cargo test --lib --release --no-run
+      - name: loom rejects the weakened ring
+        run: |
+          set +e
+          timeout 600 cargo test --lib --release spsc::loom_tests
+          code=$?
+          if [ "$code" -eq 101 ]; then
+            echo "loom rejected the weakened ring, as it should"
+            exit 0
+          fi
+          echo "expected the loom tests to fail (exit 101), got exit $code"
+          exit 1
+
+  miri:
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: -Zmiri-strict-provenance
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo miri test
+
+  # Data races in the threaded tests, at sizes loom cannot explore.
+  tsan:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings -Zsanitizer=thread
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -Zbuild-std --target x86_64-unknown-linux-gnu --lib
+
+  # A weak memory model in hardware: x86 hides ordering bugs that aarch64 shows.
+  aarch64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release --all-features
+
   msrv:
     runs-on: ubuntu-latest
     steps:
