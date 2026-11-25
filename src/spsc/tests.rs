@@ -1,5 +1,6 @@
 use super::{Consumer, Producer, RingBuffer};
 use crate::test_support::{DropCounter, Tracked};
+use core::sync::atomic::{AtomicBool, Ordering};
 use std::collections::VecDeque;
 use std::thread;
 use std::vec::Vec;
@@ -109,22 +110,38 @@ fn values_left_in_the_ring_are_dropped_once_with_the_last_handle() {
     assert_eq!(counter.drops(), total);
 }
 
+/// Sets its flag when dropped, also while unwinding from a failed assertion.
+struct SetOnDrop<'a>(&'a AtomicBool);
+
+impl Drop for SetOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
 #[test]
 fn values_cross_threads_in_order_and_are_each_dropped_once() {
     let count = if cfg!(miri) { 200 } else { 200_000 };
     let counter = DropCounter::new();
     let (mut producer, mut consumer) = RingBuffer::new(16);
     let values: Vec<Tracked> = (0..count).map(|value| counter.track(value)).collect();
+    // Set when the consumer stops, also by a failed assertion, so the producer
+    // does not spin on a full ring forever and turn a failure into a hang.
+    let consumer_gone = AtomicBool::new(false);
     thread::scope(|scope| {
-        scope.spawn(move || {
+        scope.spawn(|| {
             for value in values {
                 let mut value = value;
                 while let Err(back) = producer.push(value) {
+                    if consumer_gone.load(Ordering::SeqCst) {
+                        return;
+                    }
                     value = back;
                     thread::yield_now();
                 }
             }
         });
+        let _stop_producer = SetOnDrop(&consumer_gone);
         let mut expected = 0;
         while expected < count {
             match consumer.pop() {
