@@ -69,6 +69,21 @@ jobs:
       - name: loom rejects the weakened ring
         run: bash scripts/expect-loom-failure.sh spsc::loom_tests
 
+  # The MPMC queue with the store that publishes a written slot weakened to
+  # Relaxed. Same rules as above: it has to compile, and loom has to fail on it.
+  loom-rejects-known-wrong-mpmc:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: --cfg loom --cfg latchless_mutation="mpmc_relaxed_publish"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: the weakened queue compiles
+        run: cargo test --lib --release --no-run
+      - name: loom rejects the weakened queue
+        run: bash scripts/expect-loom-failure.sh mpmc::loom_tests
+
   miri:
     runs-on: ubuntu-latest
     env:
