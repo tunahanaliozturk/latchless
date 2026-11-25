@@ -6,7 +6,19 @@ A latch is what database engineers call a short lock on an in-memory structure. 
 
 ## Status
 
-Planning. The repository holds the design and the roadmap; no functional code yet.
+M1 of the [roadmap](docs/roadmap.md) is built: `spsc::RingBuffer` and the test harness the other structures will use. The miri and ThreadSanitizer jobs are configured but have not run yet. Not released; nothing is on crates.io.
+
+What is tested for the ring today:
+
+| Claim | Test |
+| --- | --- |
+| Values come out in the order they went in, a full ring hands the value back, and the counters wrap correctly. | `the_ring_behaves_like_a_bounded_vecdeque` in `src/spsc/tests.rs` checks 20,000 random steps per capacity from 0 to 5 against a `VecDeque`. |
+| No data race and no lost or reordered value in any interleaving of the scenarios given to loom. | `src/spsc/loom_tests.rs`: three values through rings of one and two slots, and a ring dropped with values still in it. |
+| The loom tests notice a wrong ordering. | CI builds the ring with its publishing store weakened to Relaxed and requires loom to fail (`loom-rejects-known-wrong` in `.github/workflows/ci.yml`, [ADR 0003](docs/adr/0003-known-wrong-variants.md)). |
+| Every value is dropped exactly once, including the ones left in the ring. | Drop-counting element types in `values_left_in_the_ring_are_dropped_once_with_the_last_handle` and the loom scenarios. |
+| No undefined behaviour, no race at scale, correct on weak memory hardware. | CI jobs run the tests under miri, under ThreadSanitizer, and on an aarch64 runner. None of the three has run yet. |
+
+loom checks only the scenarios it is given, two threads and three values. A bug that needs a longer run to show is not ruled out by it; the threaded test and the aarch64 job are there for that, and they are evidence, not proof.
 
 - [docs/design.md](docs/design.md): what is in the crate, the rules for `unsafe`, and how each structure will be tested.
 - [docs/roadmap.md](docs/roadmap.md): milestones, each with an exit test.
