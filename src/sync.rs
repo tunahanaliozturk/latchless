@@ -1,7 +1,9 @@
 //! The one place atomics, cells and `Arc` are imported from.
 //!
-//! Under `cfg(all(loom, test))` everything resolves to loom's model types, so the
-//! loom tests check the same code that ships. Otherwise it is `core` and `alloc`.
+//! Everything resolves to loom's model types only when both `--cfg loom` is set
+//! and the crate is built for its own tests, `cfg(all(loom, test))`, so the loom
+//! tests check the same code that ships. In every other build, `--cfg loom`
+//! included, it is `core` and `alloc`.
 //! loom's `UnsafeCell` hands out raw pointers through closures instead of
 //! `get()`, so the `core` side wraps its cell in the same shape.
 
