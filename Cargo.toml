@@ -11,9 +11,20 @@ keywords = ["lock-free", "concurrency", "queue", "atomic", "no_std"]
 categories = ["concurrency", "data-structures", "no-std"]
 exclude = ["/.github", "/docs"]
 
+# loom is only built when the crate is compiled with `--cfg loom`, and only for
+# the crate's own unit tests. The shipped crate has no dependencies.
+[target.'cfg(loom)'.dev-dependencies]
+loom = "0.7.3"
+
 [lints.rust]
 # This crate needs unsafe. The rules for it are in docs/adr/0001.
 unsafe_op_in_unsafe_fn = "deny"
+# `loom` switches the atomics to loom's; `latchless_mutation` builds a known-wrong
+# variant on purpose (docs/adr/0003).
+unexpected_cfgs = { level = "warn", check-cfg = [
+  "cfg(loom)",
+  'cfg(latchless_mutation, values("spsc_relaxed_publish"))',
+] }
 missing_docs = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 unreachable_pub = "warn"
