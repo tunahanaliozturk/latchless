@@ -12,14 +12,25 @@ pub(crate) use loom::{
     cell::UnsafeCell,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering, fence},
     },
 };
 
 #[cfg(not(all(loom, test)))]
 pub(crate) use alloc::sync::Arc;
 #[cfg(not(all(loom, test)))]
-pub(crate) use core::sync::atomic::{AtomicUsize, Ordering};
+pub(crate) use core::sync::atomic::{AtomicUsize, Ordering, fence};
+
+/// Called in a loop that waits for another thread to finish a step.
+///
+/// A spin-loop hint normally. Under loom it yields, so the model runs the other
+/// threads instead of exploring the same wait over and over.
+pub(crate) fn spin() {
+    #[cfg(all(loom, test))]
+    loom::thread::yield_now();
+    #[cfg(not(all(loom, test)))]
+    core::hint::spin_loop();
+}
 
 /// `core::cell::UnsafeCell` with loom's closure-based interface.
 #[cfg(not(all(loom, test)))]

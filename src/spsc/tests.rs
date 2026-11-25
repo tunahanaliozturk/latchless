@@ -1,24 +1,11 @@
 use super::{Consumer, Producer, RingBuffer};
-use crate::test_support::{DropCounter, Tracked};
+use crate::test_support::{DropCounter, Tracked, Xorshift};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::thread;
 use std::vec::Vec;
-
-/// A small xorshift generator, so the model test needs no dependency and every
-/// run sees the same sequence.
-struct Xorshift(u64);
-
-impl Xorshift {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-}
 
 #[test]
 fn the_ring_behaves_like_a_bounded_vecdeque() {
