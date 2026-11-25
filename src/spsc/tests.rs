@@ -1,7 +1,9 @@
 use super::{Consumer, Producer, RingBuffer};
 use crate::test_support::{DropCounter, Tracked};
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::collections::VecDeque;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
 use std::thread;
 use std::vec::Vec;
 
@@ -160,6 +162,39 @@ fn values_cross_threads_in_order_and_are_each_dropped_once() {
         }
     });
     assert_eq!(counter.drops(), count);
+}
+
+/// Counts its own drops, and panics in its destructor if told to.
+struct Fuse {
+    explode: bool,
+    drops: Arc<AtomicUsize>,
+}
+
+impl Drop for Fuse {
+    fn drop(&mut self) {
+        self.drops.fetch_add(1, Ordering::SeqCst);
+        assert!(!self.explode, "destructor panic, on purpose");
+    }
+}
+
+#[test]
+fn a_panicking_destructor_does_not_stop_the_other_values_being_dropped() {
+    let counts: Vec<Arc<AtomicUsize>> = (0..3).map(|_| Arc::new(AtomicUsize::new(0))).collect();
+    let (mut producer, consumer) = RingBuffer::new(3);
+    for (index, drops) in counts.iter().enumerate() {
+        let fuse = Fuse {
+            explode: index == 0,
+            drops: Arc::clone(drops),
+        };
+        assert!(producer.push(fuse).is_ok());
+    }
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
+        drop(producer);
+        drop(consumer);
+    }));
+    assert!(outcome.is_err());
+    let drops: Vec<usize> = counts.iter().map(|c| c.load(Ordering::SeqCst)).collect();
+    assert_eq!(drops, [1, 1, 1]);
 }
 
 #[test]

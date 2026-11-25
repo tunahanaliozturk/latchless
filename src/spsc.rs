@@ -165,23 +165,56 @@ impl<T> RingBuffer<T> {
     }
 }
 
+/// Drops the values in positions `[position, tail)` of a ring being dropped.
+///
+/// Its own `Drop` drains whatever is left. That is what keeps going when one
+/// value's destructor panics: unwinding drops this guard, which drops the rest,
+/// the way `Vec` does. `position` moves past a value before that value is dropped,
+/// so no value is dropped twice.
+struct DropRemaining<'a, T> {
+    ring: &'a RingBuffer<T>,
+    position: usize,
+    tail: usize,
+}
+
+impl<T> DropRemaining<'_, T> {
+    fn drop_all(&mut self) {
+        while self.position != self.tail {
+            let position = self.position;
+            self.position = self.ring.next(position);
+            self.ring.slot(position).with_mut(|slot| {
+                // SAFETY: `position` was in `[head, tail)`, so the slot holds a value
+                // the consumer never took, and no handle is left to touch it.
+                // `self.position` has already moved past it, so this value is
+                // dropped once, even if its destructor panics and the guard's own
+                // `Drop` takes over the loop.
+                unsafe { slot.cast::<T>().drop_in_place() }
+            });
+        }
+    }
+}
+
+impl<T> Drop for DropRemaining<'_, T> {
+    fn drop(&mut self) {
+        // Only does work when `drop_all` was cut short by a panic.
+        self.drop_all();
+    }
+}
+
 impl<T> Drop for RingBuffer<T> {
     fn drop(&mut self) {
         // Relaxed: this runs once, after both handles have dropped their `Arc`.
         // The last `Arc` decrement acquires every earlier one, so the final stores
         // of both counters, and every slot write before them, are visible here.
-        let mut position = self.head.load(Ordering::Relaxed);
+        let position = self.head.load(Ordering::Relaxed);
         // Relaxed: as above.
         let tail = self.tail.load(Ordering::Relaxed);
-        while position != tail {
-            self.slot(position).with_mut(|slot| {
-                // SAFETY: `position` is in `[head, tail)`, so the slot holds a value
-                // the consumer never took, and no handle is left to touch it. Each
-                // position is visited once, so the value is dropped once.
-                unsafe { slot.cast::<T>().drop_in_place() }
-            });
-            position = self.next(position);
+        DropRemaining {
+            ring: self,
+            position,
+            tail,
         }
+        .drop_all();
     }
 }
 
