@@ -459,8 +459,12 @@ impl<T> fmt::Debug for ArrayQueue<T> {
 
 /// Negative `Send` and `Sync` checks (docs/design.md, "Rules for unsafe").
 ///
-/// Each doctest is a `compile_fail` for one reason only. `E0277` pins the failure
-/// to an unmet trait bound, so an unrelated compile error cannot make one pass.
+/// Each doctest is a `compile_fail` that asserts one trait bound on one type and
+/// does nothing else. rustdoc checks the `E0277` on them only on a nightly
+/// toolchain; on stable, which the CI doctests use, any compile error would make
+/// one pass. What shows they fail for the bound is that the same assertion
+/// compiles for types that meet it, in
+/// `the_queue_can_be_shared_when_t_is_send_but_not_sync` (`src/mpmc/tests.rs`).
 #[cfg(doctest)]
 mod negative_checks {
     /// `ArrayQueue<Rc<()>>` is not `Send`, because `Rc<()>` is not.
