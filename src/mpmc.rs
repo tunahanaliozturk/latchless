@@ -249,12 +249,18 @@ impl<T> ArrayQueue<T> {
             // this push writes it.
             let stamp = slot.stamp.load(Ordering::Acquire);
             if stamp == tail {
-                // SeqCst success: the empty check in `pop` puts a SeqCst fence before
-                // reading `tail`, and a SeqCst operation is what such a fence is
-                // ordered against. Its Release half matters too: a push that read
-                // this `tail` acquires it through the fence in its full check, and
-                // then sees the `head` this thread's earlier pops moved. Relaxed
-                // failure: the value is only a new guess.
+                // SeqCst success: a conservative choice, as in crossbeam, not one
+                // shown to be needed. Being SeqCst puts this claim in the single
+                // order of SeqCst operations, so a pop whose empty-check fence comes
+                // later in that order reads this `tail` or a later one. Whether
+                // AcqRel would do, with the slot stamps' Release and Acquire carrying
+                // the rest, has not been argued through, and neither loom nor x86
+                // can tell the two apart (the mutation table in docs/roadmap.md).
+                // The Release half is needed: a push that read this `tail` acquires
+                // it through the fence in its full check, and then sees the `head`
+                // this thread's earlier pops moved; with Relaxed here,
+                // `a_push_after_a_pop_on_each_thread_cannot_find_the_queue_full`
+                // fails. Relaxed failure: the value is only a new guess.
                 match self.tail.compare_exchange_weak(
                     tail,
                     self.next(tail),
@@ -292,9 +298,12 @@ impl<T> ArrayQueue<T> {
                 // in the second case; checking `head` here instead reports a full
                 // queue without waiting for a slow push
                 // (docs/adr/0005-array-queue-full-check.md).
-                // SeqCst fence: pairs with the SeqCst compare-and-swap on `head` in
-                // `pop`. A pop whose claim comes before this fence in the single
-                // order of SeqCst operations is seen by the load below.
+                // SeqCst fence. As an acquire fence after the loads of `tail`, it
+                // makes the push that wrote that `tail` happen before the load
+                // below. As a SeqCst fence, if a pop's SeqCst compare-and-swap on
+                // `head` comes before it in the single order of SeqCst operations,
+                // the load below reads that claim or a later one. The second is a
+                // rule about what the load may read, not a Release/Acquire pair.
                 fence(Ordering::SeqCst);
                 // Relaxed: ordered by the fence above.
                 let head = self.head.load(Ordering::Relaxed);
@@ -328,11 +337,12 @@ impl<T> ArrayQueue<T> {
             // write of the value happens before this pop reads it.
             let stamp = slot.stamp.load(Ordering::Acquire);
             if stamp == head + 1 {
-                // SeqCst success: pairs with the SeqCst fence in `push`'s full check,
-                // as that fence's comment says. Its Release half matters too, the
-                // same way as on `tail`: a pop that read this `head` sees the `tail`
-                // this thread's earlier pushes moved. Relaxed failure: only a new
-                // guess.
+                // SeqCst success: conservative, for the same reasons as the
+                // compare-and-swap on `tail` in `push`; with it, a push whose
+                // full-check fence comes later in the SeqCst order reads this `head`
+                // or a later one. The Release half is needed the same way as on
+                // `tail`: a pop that read this `head` sees the `tail` this thread's
+                // earlier pushes moved. Relaxed failure: only a new guess.
                 match self.head.compare_exchange_weak(
                     head,
                     self.next(head),
@@ -364,8 +374,8 @@ impl<T> ArrayQueue<T> {
             } else if stamp == head {
                 // Nothing has been published in this slot at this lap. The queue is
                 // empty if no push has claimed the slot yet.
-                // SeqCst fence: pairs with the SeqCst compare-and-swap on `tail` in
-                // `push`, the same way as the fence in `push`'s full check.
+                // SeqCst fence: the same two jobs as the fence in `push`'s full
+                // check, with `head` and `tail` swapped.
                 fence(Ordering::SeqCst);
                 // Relaxed: ordered by the fence above.
                 let tail = self.tail.load(Ordering::Relaxed);

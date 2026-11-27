@@ -33,5 +33,5 @@ Four things came up while building it.
 - The queue differs from crossbeam's in one branch of `push`. The proptest model test, the loom scenarios and the stress histories all go through it.
 - loom does not cover two consumers waiting on the same unpublished slot, or a push and a pop waiting at the same time. The threaded stress tests do, without the guarantee of every interleaving.
 - The bounded scenarios do not cover interleavings with four or more preemptions.
-- The `SeqCst` compare-and-swaps are justified by the C11 argument in their comments, not by loom. The mutation table in the roadmap records which weakenings loom catches and which it cannot see.
+- The `SeqCst` compare-and-swaps are a conservative choice kept from crossbeam. Their comments say what `SeqCst` gives them; whether `AcqRel` would be enough has not been argued through, and loom cannot tell the two apart. The mutation table in the roadmap records which weakenings loom catches and which it cannot see.
 - The M1 ring's loom scenarios use the main thread as the consumer. A probe on the drop scenario showed that main-thread pop does see values, so the problem in point 3 did not show up there, but the ring's scenarios were not rewritten to the spawned-only form.
