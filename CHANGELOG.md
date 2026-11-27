@@ -17,3 +17,4 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - A second CI check that loom rejects a deliberately weakened queue.
 - Two loom scenarios for the queue's full check: a stale full answer meeting a stale empty one, and each thread popping, then pushing, on a full queue. Without them loom missed the fence in the full check being removed and the compare-and-swap on `tail` being weakened to Relaxed.
 - `ArrayQueue` keeps its `head`, `tail` and slot stamps in 64 bits on every target. With `usize` stamps on a 32-bit target, a thread stalled for 2^31 claims by others could win a stale compare-and-swap and write or read a slot twice. `mpmc` is now built only where 64-bit atomics exist.
+- `ArrayQueue::push` and `ArrayQueue::pop` are `#[must_use]` with a message, so ignoring a popped value or a value handed back by a full queue warns.

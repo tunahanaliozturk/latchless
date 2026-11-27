@@ -233,6 +233,7 @@ impl<T> ArrayQueue<T> {
     /// # Errors
     ///
     /// Returns `value` back if the queue is full.
+    #[must_use = "a full queue hands the value back in `Err`, and ignoring it drops the value"]
     pub fn push(&self, value: T) -> Result<(), T> {
         if self.slots.is_empty() {
             return Err(value);
@@ -314,6 +315,7 @@ impl<T> ArrayQueue<T> {
     }
 
     /// Removes the oldest value, or returns `None` if the queue is empty.
+    #[must_use = "the value is taken off the queue, and ignoring it drops it"]
     pub fn pop(&self) -> Option<T> {
         if self.slots.is_empty() {
             return None;
@@ -485,4 +487,17 @@ mod negative_checks {
     /// assert_sync::<ArrayQueue<MutexGuard<'static, ()>>>();
     /// ```
     fn queue_needs_t_send_even_when_t_is_sync() {}
+
+    /// Ignoring what `pop` returns drops the value it took off the queue, so
+    /// `pop` is `#[must_use]` and this does not compile.
+    ///
+    /// ```compile_fail
+    /// use latchless::mpmc::ArrayQueue;
+    ///
+    /// #[deny(unused_must_use)]
+    /// fn throw_away(queue: &ArrayQueue<u8>) {
+    ///     queue.pop();
+    /// }
+    /// ```
+    fn ignoring_a_pop_is_refused() {}
 }
