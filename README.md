@@ -6,7 +6,7 @@ A latch is what database engineers call a short lock on an in-memory structure. 
 
 ## Status
 
-M1 of the [roadmap](docs/roadmap.md) is built: `spsc::RingBuffer` and the test harness the other structures will use. The miri and ThreadSanitizer jobs are configured but have not run yet. Not released; nothing is on crates.io.
+M2 of the [roadmap](docs/roadmap.md) is built: `spsc::RingBuffer`, `mpmc::ArrayQueue` and the test harness the other structures will use. The miri and ThreadSanitizer jobs are configured but have not run yet. Not released; nothing is on crates.io.
 
 What is tested for the ring today:
 
@@ -18,7 +18,18 @@ What is tested for the ring today:
 | Every value is dropped exactly once, including the ones left in the ring. | Drop-counting element types in `values_left_in_the_ring_are_dropped_once_with_the_last_handle` and the loom scenarios. |
 | No undefined behaviour, no race at scale, correct on weak memory hardware. | CI jobs run the tests under miri, under ThreadSanitizer, and on an aarch64 runner. None of the three has run yet. |
 
-loom checks only the scenarios it is given, two threads and three values. A bug that needs a longer run to show is not ruled out by it; the threaded test and the aarch64 job are there for that, and they are evidence, not proof.
+What is tested for the queue today:
+
+| Claim | Test |
+| --- | --- |
+| A single thread sees a bounded FIFO queue: values in order, a full queue hands the value back, an empty one returns `None`, across many laps of every slot and across the lap counter wrapping around `usize`. | `the_queue_behaves_like_a_bounded_vecdeque` in `src/mpmc/tests.rs`, a proptest of sequences up to 64 steps on capacities 0 to 4, half of them starting on the last lap before the wrap. |
+| Concurrent histories have a sequential explanation. | `recorded_histories_are_linearizable`: 500 rounds of four threads making 24 random calls each, every history checked by the search in `src/test_support/linearizability.rs` ([ADR 0004](docs/adr/0004-linearizability-checking.md)). The checker has its own tests with histories it must reject. |
+| No data race on a slot and no result that fits no sequential order, with two producers and two consumers. | `src/mpmc/loom_tests.rs`. The two scenarios with three or more threads are explored with up to three preemptions per interleaving, not exhaustively ([ADR 0005](docs/adr/0005-array-queue-full-check.md)). |
+| The loom tests notice a wrong ordering. | CI builds the queue with its publishing store weakened to Relaxed and requires loom to fail (`loom-rejects-known-wrong-mpmc`). By hand, loom caught every weakened ordering tried except the two compare-and-swaps going from `SeqCst` to `AcqRel`, which loom cannot tell apart; the table is in the [roadmap](docs/roadmap.md). |
+| Every value is dropped exactly once, also when a destructor panics. | `values_left_in_the_queue_are_dropped_once_with_it`, `a_panicking_destructor_does_not_stop_the_other_values_being_dropped`, and drop counts in every loom scenario. |
+| `ArrayQueue<T>` is `Send` and `Sync` exactly when `T: Send`. | `compile_fail` doctests in `src/mpmc.rs` for `Rc` and `MutexGuard`, and a test that `ArrayQueue<Cell<u8>>` is `Sync`. |
+
+loom checks only the scenarios it is given: two to four threads making one to three calls each. A bug that needs a longer run to show is not ruled out by it; the threaded tests and the aarch64 job are there for that, and they are evidence, not proof.
 
 - [docs/design.md](docs/design.md): what is in the crate, the rules for `unsafe`, and how each structure will be tested.
 - [docs/roadmap.md](docs/roadmap.md): milestones, each with an exit test.

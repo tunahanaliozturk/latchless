@@ -38,6 +38,40 @@ Review round after M1:
 | `Drop`: values left in the ring are not dropped | caught | caught |
 | Positions wrap at the capacity instead of twice it | caught | caught |
 
+- **M2**, 2026-11-25: done, with two limits on the loom part stated below; miri, ThreadSanitizer and aarch64 again only configured. `mpmc::ArrayQueue` in crossbeam's stamp layout, with one change to `push`: a push whose slot is still being written by the previous lap's push reports a full queue instead of waiting for it ([ADR 0005](adr/0005-array-queue-full-check.md)). A linearizability checker for queue histories, a Wing and Gong search with Lowe's memo, with its own tests of histories it must reject ([ADR 0004](adr/0004-linearizability-checking.md)). proptest as a dev-dependency.
+  - Exit test, loom: `two_producers_and_two_consumers_agree_with_a_sequential_queue` passes, together with slot reuse across a lap on a one-slot queue, push-then-pop on two threads, its mirror pop-then-push on a full queue, a stale full answer meeting a stale empty one, and a queue dropped with values in it. The whole loom suite, ring included, took 143 seconds in release mode on the development laptop (559 in an earlier run while other builds shared the machine), nearly all of it the four-thread scenario; the rest finishes in under a minute. Limits: the two largest scenarios are explored with at most three preemptions per interleaving, because without a bound neither finished in twenty minutes; and no scenario lets two threads wait at once, because loom then explores the waiting threads yielding to each other without end and runs past its branch limit. The four-thread scenario therefore starts with one value in a three-slot queue, so only one consumer can end up waiting.
+  - Exit test, histories: `recorded_histories_are_linearizable` checks 500 rounds of four threads making 24 random pushes and pops each; in a sample run 477 of the 500 rounds had calls from different threads overlapping, and the test fails if none do. The timestamps come from a `SeqCst` counter, which orders the calls more than the queue does, so these histories check the logic, not the orderings.
+  - Exit test, proptest: `the_queue_behaves_like_a_bounded_vecdeque`, 512 cases of up to 64 steps on capacities 0 to 4, half of them starting on the last lap before the stamps wrap around `usize`.
+  - The queue with its publishing store weakened to Relaxed is kept as a cfg variant and CI requires loom to reject it (`loom-rejects-known-wrong-mpmc`); all six queue scenarios report a causality violation on it locally. The plain tests pass on it.
+  - Found on the way: in the first version of the loom scenarios the main thread made one of the pops, and a probe showed that pop never returned a value in any interleaving loom explored. Every caller is now a spawned thread, and each scenario fails unless some interleaving has a pop return a value a spawned thread pushed. The same probe on the ring's drop scenario showed its main-thread pop does see values.
+
+  - Mutations: 21 by hand plus the cfg variant, each with the plain tests (five-minute timeout) and with every loom scenario but the four-thread one (five minutes); when those passed, the four-thread scenario ran on its own (twenty minutes). The first pass left two orderings uncaught: the fence in `push`'s full check removed, and the compare-and-swap on `tail` weakened to Relaxed. Two scenarios were added for them, `a_stale_full_and_a_stale_empty_answer_cannot_meet` and `a_push_after_a_pop_on_each_thread_cannot_find_the_queue_full`, and the table below is the second pass against the final suite. As in M1, the plain tests catch none of the weakened orderings on x86. Two weakenings are not caught and cannot be by these tools: the compare-and-swaps on `head` and `tail` from `SeqCst` to `AcqRel`. loom models a `SeqCst` compare-and-swap as `AcqRel` (ADR 0005, point 4), so for loom the mutated queue is the same program, and on x86 both compile to the same locked instruction. They stay `SeqCst` on the C11 argument in their comments: a `SeqCst` fence only orders against `SeqCst` operations.
+
+| Mutation | Plain tests | loom (scenarios that fail) |
+| --- | --- | --- |
+| `push`: publishing store Release to Relaxed (the cfg variant kept in CI) | pass | caught: all six queue scenarios |
+| `push`: slot stamp load Acquire to Relaxed | pass | caught: slot reuse, pop-then-push, stale full and empty |
+| `pop`: slot stamp load Acquire to Relaxed | pass | caught: every scenario that ran (the four-thread one was not needed) |
+| `pop`: store that frees the slot Release to Relaxed | pass | caught: slot reuse, pop-then-push, stale full and empty |
+| `push`: no fence in the full check | pass | caught: stale full and empty, pop-then-push |
+| `pop`: no fence in the empty check | pass | caught: push-then-pop, pop-then-push, stale full and empty |
+| `push`: fence in the full check `SeqCst` to `AcqRel` | pass | caught: stale full and empty |
+| `pop`: fence in the empty check `SeqCst` to `AcqRel` | pass | caught: stale full and empty |
+| `push`: compare-and-swap on `tail` `SeqCst` to Relaxed | pass | caught: pop-then-push |
+| `pop`: compare-and-swap on `head` `SeqCst` to Relaxed | pass | caught: push-then-pop, pop-then-push |
+| `push`: compare-and-swap on `tail` `SeqCst` to `AcqRel` | pass | not caught; not catchable, see above |
+| `pop`: compare-and-swap on `head` `SeqCst` to `AcqRel` | pass | not caught; not catchable, see above |
+| `pop`: reports empty without reading `tail` | caught: `recorded_histories_are_linearizable` | caught: push-then-pop, pop-then-push, stale full and empty |
+| `push`: reports full without reading `head` | caught: `recorded_histories_are_linearizable` | caught: stale full and empty, pop-then-push |
+| `next` keeps the index bits when it moves to the next lap | caught: two failures, and four tests hang until the timeout | caught: pop-then-push, stale full and empty |
+| `pop`: frees the slot with `+` instead of `wrapping_add` | caught: the proptest and the seeded run across the wrap overflow | pass (no scenario reaches the wrap) |
+| `push`: publishes before writing the value | caught: `recorded_histories_are_linearizable` (and a hang) | caught: every scenario that ran, causality violation |
+| `pop`: frees the slot before reading the value | caught: `recorded_histories_are_linearizable` (and a hang) | caught: slot reuse, pop-then-push, stale full and empty |
+| `Drop`: drops nothing past `head` | caught: both drop tests | caught: the drop scenario |
+| `Drop`: the guard does not finish after a panic | caught: `a_panicking_destructor_does_not_stop_the_other_values_being_dropped` | pass (no scenario panics in a destructor) |
+| `push`: no check for zero capacity | caught: the zero-capacity test, the proptest, the seeded run | pass (no zero-capacity scenario) |
+| `new`: no assert on the capacity | caught: `a_capacity_without_room_for_a_lap_is_refused` | pass |
+
 ## Order of work inside a milestone
 
 1. Write the loom scenario and the sequential model first.
