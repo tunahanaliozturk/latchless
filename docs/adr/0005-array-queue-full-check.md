@@ -29,6 +29,7 @@ Four things came up while building it.
 
 ## Consequences
 
+- The queue is not lock-free in the formal sense, and neither is crossbeam's or Vyukov's original. A push that has claimed a slot and stalls before publishing it makes every pop that reaches that slot wait, and no value behind it can be popped until it publishes. A pop that has claimed a value and stalls before freeing the slot makes every push that reaches that slot a lap later wait. Calls that face a stalled call of their own kind do not wait: a push reports a full queue (the change above), and a pop has already moved past the slot. No thread takes a lock, but a stalled thread can stop the others from completing, which is what lock-freedom rules out.
 - The queue differs from crossbeam's in one branch of `push`. The proptest model test, the loom scenarios and the stress histories all go through it.
 - loom does not cover two consumers waiting on the same unpublished slot, or a push and a pop waiting at the same time. The threaded stress tests do, without the guarantee of every interleaving.
 - The bounded scenarios do not cover interleavings with four or more preemptions.

@@ -1,6 +1,6 @@
 # latchless
 
-Lock-free queues and stacks for Rust, with their own epoch-based memory reclamation.
+Queues and stacks for Rust that take no locks, with their own epoch-based memory reclamation.
 
 A latch is what database engineers call a short lock on an in-memory structure. The structures here take none.
 
@@ -40,7 +40,7 @@ loom checks only the scenarios it is given: two to four threads making one to th
 | Structure | Algorithm | Progress guarantee |
 | --- | --- | --- |
 | `spsc::RingBuffer` | Bounded ring, one producer and one consumer | Wait-free |
-| `mpmc::ArrayQueue` | Bounded queue with a sequence number per slot (Vyukov) | Lock-free |
+| `mpmc::ArrayQueue` | Bounded queue with a sequence number per slot (Vyukov) | No locks, but not lock-free: a push stalled after claiming its slot holds up the pops that reach it, and a stalled pop the pushes that reach its slot a lap later |
 | `epoch` | Epoch-based reclamation: pin, defer, collect | Lock-free, reclamation can be delayed by a stalled thread |
 | `Stack` | Treiber stack on `epoch` | Lock-free |
 | `Queue` | Michael-Scott unbounded queue on `epoch` | Lock-free |

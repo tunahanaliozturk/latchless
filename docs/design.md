@@ -4,7 +4,7 @@ This document is the contract. Code that disagrees with it is a bug in one of th
 
 ## Goals
 
-1. A small set of lock-free structures that are correct in every interleaving, with the evidence in the repository.
+1. A small set of concurrent structures that take no locks and are correct in every interleaving, with the evidence in the repository.
 2. Every `unsafe` block and every atomic ordering explained where it is written.
 3. Works without the standard library, given an allocator.
 4. Honest benchmarks against the crates people actually use.

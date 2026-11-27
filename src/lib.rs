@@ -1,4 +1,4 @@
-//! latchless: lock-free queues and stacks.
+//! latchless: queues and stacks that take no locks.
 //!
 //! Implemented so far: [`spsc::RingBuffer`], a bounded ring with one producer and
 //! one consumer, and [`mpmc::ArrayQueue`], a bounded queue for any number of

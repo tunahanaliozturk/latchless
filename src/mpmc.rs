@@ -29,10 +29,19 @@
 //! A push claims a slot by moving `tail` past it with a compare-and-swap, writes
 //! the value, then publishes it by advancing the slot's stamp with a Release
 //! store. A pop does the same with `head`, reads the value, and frees the slot
-//! for the next lap. A thread that has claimed a slot but not yet published it
-//! makes others wait for it, so the queue is lock-free only in the usual sense
-//! for this design: a thread stalled between its claim and its publish holds up
-//! that one slot.
+//! for the next lap.
+//!
+//! # Progress
+//!
+//! No thread takes a lock, but the queue is not lock-free in the formal sense:
+//! a stalled thread can stop others from completing. A push that has claimed a
+//! slot and stalls before publishing it makes every pop that reaches that slot
+//! wait, and no value behind it can be popped until it publishes. A pop that has
+//! claimed a value and stalls before freeing the slot makes every push that
+//! reaches that slot a lap later wait. A push that reaches a stalled push's slot
+//! reports a full queue instead of waiting, and pops move past a stalled pop.
+//! crossbeam's `ArrayQueue` and Vyukov's original are not lock-free either, for
+//! the same reason.
 
 use alloc::boxed::Box;
 use core::fmt;
@@ -73,7 +82,8 @@ struct Slot<T> {
     value: UnsafeCell<MaybeUninit<T>>,
 }
 
-/// A bounded lock-free queue for any number of producers and consumers.
+/// A bounded queue for any number of producers and consumers that takes no
+/// locks. It is not lock-free: see [the module docs](crate::mpmc#progress).
 ///
 /// # Examples
 ///

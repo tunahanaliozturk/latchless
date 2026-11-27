@@ -11,7 +11,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Dropping a ring whose value panics in its destructor still drops the other values.
 - Compile-fail doctests for the handles not being `Sync` and needing `T: Send`.
 - The loom rejection check fails when the known-wrong variant does not build.
-- `mpmc::ArrayQueue`: a bounded lock-free queue for any number of producers and consumers, after Vyukov.
+- `mpmc::ArrayQueue`: a bounded queue for any number of producers and consumers, after Vyukov. It takes no locks but is not lock-free: a thread stalled between claiming a slot and finishing with it holds up the calls that reach that slot.
 - A linearizability checker for queue histories, used by the threaded stress test and, in an unordered mode, by the loom scenarios.
 - proptest as a dev-dependency, for the sequential model tests.
 - A second CI check that loom rejects a deliberately weakened queue.
