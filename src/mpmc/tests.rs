@@ -165,7 +165,8 @@ fn values_cross_threads_once_each_and_in_order_per_producer() {
     let counter = DropCounter::new();
     let queue = ArrayQueue::new(8);
     // Set when a consumer stops, also by a failed assertion, so the producers do
-    // not spin on a full queue forever and turn a failure into a hang.
+    // not spin on a full queue forever and the other consumer does not wait for
+    // values they gave up on, which would turn a failure into a hang.
     let consumer_gone = AtomicBool::new(false);
     let popped = AtomicUsize::new(0);
     thread::scope(|scope| {
@@ -195,6 +196,9 @@ fn values_cross_threads_once_each_and_in_order_per_producer() {
                 let mut last: [Option<usize>; 2] = [None, None];
                 while popped.load(Ordering::SeqCst) < 2 * per_producer {
                     let Some(tracked) = queue.pop() else {
+                        if consumer_gone.load(Ordering::SeqCst) {
+                            return;
+                        }
                         thread::yield_now();
                         continue;
                     };
