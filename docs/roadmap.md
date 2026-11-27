@@ -72,6 +72,17 @@ Review round after M1:
 | `push`: no check for zero capacity | caught: the zero-capacity test, the proptest, the seeded run | pass (no zero-capacity scenario) |
 | `new`: no assert on the capacity | caught: `a_capacity_without_room_for_a_lap_is_refused` | pass |
 
+Review round after M2:
+
+- The stamps are `u64` on every target ([ADR 0006](adr/0006-array-queue-64-bit-stamps.md)). With `usize` stamps, a push or pop stalled between checking a slot's stamp and its compare-and-swap could win a stale claim once the other threads had moved `tail` or `head` all the way round, which on a 32-bit target with one slot is 2^31 claims; two pushes could then write one slot, or a pop read a value twice. Now it takes at least 2^63 claims during the one stall, for every capacity, the same bound crossbeam accepts on 64-bit targets. No test proves this, because no test can hold a thread across 2^63 claims: the evidence is the argument in the ADR, the model tests that now start on the last lap before the 64-bit wrap, and a new CI job, `test-32-bit`, that runs the tests on i686 and has not run yet. `mpmc` is built only where 64-bit atomics exist.
+- The queue was called lock-free. It is not, in the formal sense: a push stalled after its claim holds up the pops that reach its slot, and a stalled pop the pushes that reach its slot a lap later. The rustdoc, README, CHANGELOG, design goal, package description and ADR 0005 now say so.
+- `values_cross_threads_once_each_and_in_order_per_producer` hung instead of failing when one consumer failed an assertion: the producers gave up on their values, and the other consumer waited for them for ever. It now stops too once the queue is empty and a consumer has gone. With an assertion forced to fail, the test hung in three runs out of three before the change and failed in 0.03 seconds after it.
+- `push` and `pop` are `#[must_use]` with a message. `queue.pop();` used to drop a value without a warning; the `compile_fail` doctest `ignoring_a_pop_is_refused` compiled before the change and is refused after it.
+- The `E0277` on the `compile_fail` doctests is checked only by a nightly rustdoc, so the comment saying it pins each failure to the trait bound was wrong for the stable CI job. The comments in `src/spsc.rs` and `src/mpmc.rs` now say that, and name the tests where the same assertion compiles for a type that meets the bound.
+- The paragraph above the mutation table first kept the compare-and-swaps `SeqCst` because "a `SeqCst` fence only orders against `SeqCst` operations". That does not show `AcqRel` would be wrong, so it and the code comments now call `SeqCst` a conservative choice that no tool here can tell apart from `AcqRel`.
+- The roadmap and ADR 0005 said every loom scenario fails unless a pop returns a value a spawned thread pushed. The drop scenario does not go through `Scenario::check` and has no such check; both now say so.
+- With these changes the loom suite, ring included, took between 132 and 166 seconds per run in release mode, and both known-wrong variants were still rejected, the queue with a causality violation in all six of its scenarios.
+
 ## Order of work inside a milestone
 
 1. Write the loom scenario and the sequential model first.
