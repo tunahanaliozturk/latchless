@@ -9,8 +9,14 @@
 //! `head` and `tail` are stamps: the low bits are a slot index below the
 //! capacity, the high bits count laps, in units of `one_lap`, the smallest power
 //! of two above the capacity. Because `one_lap` is above the capacity, adding 1
-//! to a stamp never carries into the lap bits, and laps wrap around `usize`
+//! to a stamp never carries into the lap bits, and laps wrap around `u64`
 //! without disturbing the index.
+//!
+//! The stamps are 64 bits on every target, not `usize`. A thread that has read a
+//! stamp and not yet made its compare-and-swap is fooled if the stamp comes
+//! round to the same value in between; with 64 bits that takes at least 2^63
+//! completed calls during the one stall, and with a 32-bit `usize` it would take
+//! 2^31 (docs/adr/0006-array-queue-64-bit-stamps.md).
 //!
 //! Each slot has a stamp of its own that says what the slot is ready for:
 //!
@@ -33,13 +39,19 @@ use core::fmt;
 use core::mem::MaybeUninit;
 
 use crate::cache_padded::CachePadded;
-use crate::sync::{AtomicUsize, Ordering, UnsafeCell, fence, spin};
+use crate::sync::{AtomicU64, Ordering, UnsafeCell, fence, spin};
 
 #[cfg(all(test, not(loom)))]
 mod tests;
 
 #[cfg(all(test, loom))]
 mod loom_tests;
+
+/// `n` as a `u64`. No Rust target has a `usize` wider than 64 bits, so nothing
+/// is lost.
+const fn widen(n: usize) -> u64 {
+    n as u64
+}
 
 /// Ordering of the store in [`ArrayQueue::push`] that hands a written slot to
 /// the consumers. Release, so that writing the value happens before a pop's
@@ -55,7 +67,7 @@ const PUBLISH: Ordering = Ordering::Relaxed;
 /// One slot of the queue: its stamp and the value it may hold.
 struct Slot<T> {
     /// What the slot is ready for; see the module docs.
-    stamp: AtomicUsize,
+    stamp: AtomicU64,
     /// Initialised exactly when `stamp` is one more than a tail stamp that
     /// points at this slot, and between a pop's claim and its read.
     value: UnsafeCell<MaybeUninit<T>>,
@@ -114,11 +126,11 @@ struct Slot<T> {
 /// ```
 pub struct ArrayQueue<T> {
     /// Stamp of the next slot to pop. Moved only by a pop's compare-and-swap.
-    head: CachePadded<AtomicUsize>,
+    head: CachePadded<AtomicU64>,
     /// Stamp of the next slot to push. Moved only by a push's compare-and-swap.
-    tail: CachePadded<AtomicUsize>,
+    tail: CachePadded<AtomicU64>,
     /// The lap unit: the smallest power of two above the capacity.
-    one_lap: usize,
+    one_lap: u64,
     slots: Box<[Slot<T>]>,
 }
 
@@ -150,27 +162,28 @@ impl<T> ArrayQueue<T> {
     }
 
     /// Creates the queue with `head` and `tail` at the start of lap `lap`.
-    /// `new` starts at lap 0; the tests start near the end of `usize` to see the
+    /// `new` starts at lap 0; the tests start near the end of `u64` to see the
     /// laps wrap.
-    fn starting_at_lap(capacity: usize, lap: usize) -> Self {
-        // This assert is what keeps `capacity + 1` and `one_lap` from overflowing.
-        // Allocating the slots would fail first for most such capacities, but the
-        // stamps should not depend on how big a slot happens to be.
+    fn starting_at_lap(capacity: usize, lap: u64) -> Self {
+        // This assert is what keeps `capacity + 1` and `one_lap` from overflowing
+        // a `u64` on a 64-bit target; with a 32-bit `usize` it holds with room to
+        // spare. Allocating the slots would fail first for most such capacities,
+        // but the stamps should not depend on how big a slot happens to be.
         assert!(
             capacity <= usize::MAX / 2,
             "capacity must be at most usize::MAX / 2, because a stamp needs a lap above it"
         );
-        let one_lap = (capacity + 1).next_power_of_two();
+        let one_lap = (widen(capacity) + 1).next_power_of_two();
         let first = lap.wrapping_mul(one_lap);
         let slots = (0..capacity)
             .map(|index| Slot {
-                stamp: AtomicUsize::new(first + index),
+                stamp: AtomicU64::new(first + widen(index)),
                 value: UnsafeCell::new(MaybeUninit::uninit()),
             })
             .collect();
         Self {
-            head: CachePadded::new(AtomicUsize::new(first)),
-            tail: CachePadded::new(AtomicUsize::new(first)),
+            head: CachePadded::new(AtomicU64::new(first)),
+            tail: CachePadded::new(AtomicU64::new(first)),
             one_lap,
             slots,
         }
@@ -182,15 +195,23 @@ impl<T> ArrayQueue<T> {
         self.slots.len()
     }
 
+    /// The slot index in a stamp's low bits.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the low bits are below `one_lap`, which is at most `usize::MAX / 2 + 1`, so they fit"
+    )]
+    fn index(&self, stamp: u64) -> usize {
+        (stamp & (self.one_lap - 1)) as usize
+    }
+
     /// The slot a stamp points at. Only called on a queue with at least one slot.
-    fn slot(&self, stamp: usize) -> &Slot<T> {
-        &self.slots[stamp & (self.one_lap - 1)]
+    fn slot(&self, stamp: u64) -> &Slot<T> {
+        &self.slots[self.index(stamp)]
     }
 
     /// The stamp after `stamp`: the next index, or index 0 of the next lap.
-    fn next(&self, stamp: usize) -> usize {
-        let index = stamp & (self.one_lap - 1);
-        if index + 1 < self.capacity() {
+    fn next(&self, stamp: u64) -> u64 {
+        if self.index(stamp) + 1 < self.capacity() {
             stamp + 1
         } else {
             (stamp & !(self.one_lap - 1)).wrapping_add(self.one_lap)
@@ -234,6 +255,11 @@ impl<T> ArrayQueue<T> {
                             // SAFETY: this thread moved `tail` past the slot at this
                             // lap, so no other push writes it, and its stamp says it
                             // is empty, so no pop reads it until the store below.
+                            // Both facts are about this lap unless `tail` came round
+                            // to the value checked above in between, which takes at
+                            // least 2^63 completed pushes during this one stall; the
+                            // crate assumes that does not happen, as crossbeam does
+                            // on 64-bit targets (docs/adr/0006-array-queue-64-bit-stamps.md).
                             // The Acquire load of the stamp ordered the last pop's
                             // read before this write. An empty slot holds no value,
                             // so nothing is overwritten without being dropped.
@@ -307,7 +333,12 @@ impl<T> ArrayQueue<T> {
                             // at this lap, and the Acquire load ordered its write
                             // before this read. This thread moved `head` past it, so
                             // no other pop reads it, and no push writes it until the
-                            // store below frees the slot, so it is read once.
+                            // store below frees the slot, so it is read once. All of
+                            // this is about this lap unless `head` came round to the
+                            // value checked above in between, which takes at least
+                            // 2^63 completed pops during this one stall; the crate
+                            // assumes that does not happen, as crossbeam does on
+                            // 64-bit targets (docs/adr/0006-array-queue-64-bit-stamps.md).
                             unsafe { cell.cast::<T>().read() }
                         });
                         // Release: pairs with the Acquire load of the stamp in `push`,
@@ -351,8 +382,8 @@ impl<T> ArrayQueue<T> {
 /// before that value is dropped, so no value is dropped twice.
 struct DropRemaining<'a, T> {
     queue: &'a ArrayQueue<T>,
-    position: usize,
-    tail: usize,
+    position: u64,
+    tail: u64,
 }
 
 impl<T> DropRemaining<'_, T> {

@@ -42,6 +42,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features
 
+  # A 32-bit usize. The queue's stamps stay 64 bits there
+  # (docs/adr/0006-array-queue-64-bit-stamps.md).
+  test-32-bit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+      - run: cargo test --lib --target i686-unknown-linux-gnu
+
   # Every interleaving of the small scenarios in src/*/loom_tests.rs.
   loom:
     runs-on: ubuntu-latest

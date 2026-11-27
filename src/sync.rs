@@ -12,19 +12,25 @@ pub(crate) use loom::{
     cell::UnsafeCell,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering, fence},
+        atomic::{AtomicUsize, Ordering},
     },
 };
+// Only `mpmc` uses these, and it is built only with 64-bit atomics.
+#[cfg(all(loom, test, target_has_atomic = "64"))]
+pub(crate) use loom::sync::atomic::{AtomicU64, fence};
 
 #[cfg(not(all(loom, test)))]
 pub(crate) use alloc::sync::Arc;
+#[cfg(all(not(all(loom, test)), target_has_atomic = "64"))]
+pub(crate) use core::sync::atomic::{AtomicU64, fence};
 #[cfg(not(all(loom, test)))]
-pub(crate) use core::sync::atomic::{AtomicUsize, Ordering, fence};
+pub(crate) use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Called in a loop that waits for another thread to finish a step.
 ///
 /// A spin-loop hint normally. Under loom it yields, so the model runs the other
 /// threads instead of exploring the same wait over and over.
+#[cfg(target_has_atomic = "64")]
 pub(crate) fn spin() {
     #[cfg(all(loom, test))]
     loom::thread::yield_now();

@@ -12,7 +12,7 @@ use std::vec::Vec;
 
 /// Runs `pushes` (true for a push, false for a pop) against a queue starting at
 /// lap `lap` and against a bounded `VecDeque`, and checks every result matches.
-fn matches_the_model(capacity: usize, lap: usize, pushes: &[bool]) {
+fn matches_the_model(capacity: usize, lap: u64, pushes: &[bool]) {
     let queue = ArrayQueue::starting_at_lap(capacity, lap);
     let mut model = VecDeque::new();
     for (step, &push) in pushes.iter().enumerate() {
@@ -37,9 +37,9 @@ proptest! {
         ..ProptestConfig::default()
     })]
 
-    /// Sequences up to 64 steps long on capacities 0 to 4 cover the full and
-    /// empty edges and several laps of every slot. Half the runs start on the
-    /// last lap before the stamps wrap around `usize`.
+    /// Sequences up to 63 steps long on capacities 0 to 4 cover the full and
+    /// empty edges and several laps of every slot. About half the runs start on the
+    /// last lap before the 64-bit stamps wrap around.
     #[test]
     #[cfg_attr(miri, ignore = "proptest is slow under miri; the seeded test below runs there")]
     fn the_queue_behaves_like_a_bounded_vecdeque(
@@ -47,7 +47,7 @@ proptest! {
         near_the_wrap in any::<bool>(),
         pushes in proptest::collection::vec(any::<bool>(), 0..64),
     ) {
-        let lap = if near_the_wrap { usize::MAX } else { 0 };
+        let lap = if near_the_wrap { u64::MAX } else { 0 };
         matches_the_model(capacity, lap, &pushes);
     }
 }
@@ -59,7 +59,7 @@ fn a_seeded_run_across_the_lap_wrap_matches_the_model() {
         let mut random = Xorshift(0x9E37_79B9_7F4A_7C15 + capacity as u64);
         let pushes: Vec<bool> = (0..steps).map(|_| random.next() % 2 == 0).collect();
         matches_the_model(capacity, 0, &pushes);
-        matches_the_model(capacity, usize::MAX, &pushes);
+        matches_the_model(capacity, u64::MAX, &pushes);
     }
 }
 
