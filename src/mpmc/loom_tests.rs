@@ -1,12 +1,13 @@
 //! loom scenarios for the queue. Run with
 //! `RUSTFLAGS="--cfg loom" cargo test --lib --release`.
 //!
-//! Each thread makes one or two calls and never retries, so every scenario has a
-//! bounded number of calls. The two largest scenarios are explored with at most
-//! three preemptions per interleaving, the bound loom's documentation suggests
-//! and tokio's CI uses; the others are explored without a bound. The results are checked with the linearizability
-//! checker in its unordered mode: loom has no clock, so the check is that some
-//! order of the calls that keeps each thread's own order explains every result.
+//! Each thread makes one to three calls and never retries, so every scenario has a
+//! bounded number of calls. The two scenarios with three or more threads are
+//! explored with at most three preemptions per interleaving, the bound loom's
+//! documentation suggests and tokio's CI uses; the two-thread ones are explored
+//! without a bound. The results are checked with the linearizability checker in
+//! its unordered mode: loom has no clock, so the check is that some order of the
+//! calls that keeps each thread's own order explains every result.
 //!
 //! No scenario lets two threads wait at the same time. A pop waits for a push
 //! that has claimed a slot but not yet published it, and a push waits for a pop
@@ -57,12 +58,12 @@ fn drain(queue: &ArrayQueue<Tracked>) -> Vec<Event> {
     }
 }
 
-/// One scenario: the queue's capacity, an optional value pushed before any
-/// thread starts, each thread's calls (`Some(value)` to push that value, `None`
-/// to pop), and the most preemptions loom may put in one interleaving.
+/// One scenario: the queue's capacity, the values pushed before any thread
+/// starts, each thread's calls (`Some(value)` to push that value, `None` to pop),
+/// and the most preemptions loom may put in one interleaving.
 struct Scenario {
     capacity: usize,
-    prefill: Option<usize>,
+    prefill: &'static [usize],
     threads: &'static [&'static [Option<usize>]],
     /// `None` explores every interleaving. `LOOM_MAX_PREEMPTIONS`, when set,
     /// overrides this, so a longer run can lift the bound.
@@ -96,17 +97,23 @@ impl Scenario {
             let counter = DropCounter::new();
             let queue = Arc::new(ArrayQueue::new(capacity));
             let mut history = Vec::new();
-            if let Some(value) = prefill {
-                assert!(queue.push(counter.track(value)).is_ok());
-                history.push(std::vec![Event {
-                    started: 0,
-                    returned: 1,
-                    call: Call::Push {
-                        value,
-                        accepted: true,
-                    },
-                }]);
-            }
+            // In one list, so they keep their order, and all before tick 2.
+            history.push(
+                prefill
+                    .iter()
+                    .map(|&value| {
+                        assert!(queue.push(counter.track(value)).is_ok());
+                        Event {
+                            started: 0,
+                            returned: 1,
+                            call: Call::Push {
+                                value,
+                                accepted: true,
+                            },
+                        }
+                    })
+                    .collect(),
+            );
             let handles: Vec<_> = threads
                 .iter()
                 .map(|calls| {
@@ -131,7 +138,7 @@ impl Scenario {
                 .map(|handle| handle.join().unwrap())
                 .collect();
             if joined.iter().flatten().any(|event| {
-                matches!(event.call, Call::Pop { got: Some(value) } if Some(value) != prefill)
+                matches!(event.call, Call::Pop { got: Some(value) } if !prefill.contains(&value))
             }) {
                 saw_a_race.store(true, Ordering::SeqCst);
             }
@@ -140,7 +147,7 @@ impl Scenario {
             assert!(is_linearizable(capacity, &history), "{history:?}");
             drop(queue);
             let pushed = threads.iter().copied().flatten().flatten().count();
-            assert_eq!(counter.drops(), pushed + usize::from(prefill.is_some()));
+            assert_eq!(counter.drops(), pushed + prefill.len());
         });
         assert!(
             raced.load(Ordering::SeqCst),
@@ -157,7 +164,7 @@ impl Scenario {
 fn two_producers_and_two_consumers_agree_with_a_sequential_queue() {
     Scenario {
         capacity: 3,
-        prefill: Some(9),
+        prefill: &[9],
         threads: &[&[Some(0)], &[Some(1)], &[None], &[None]],
         // Unbounded, this did not finish in twenty minutes.
         preemption_bound: Some(3),
@@ -173,23 +180,61 @@ fn two_producers_and_two_consumers_agree_with_a_sequential_queue() {
 fn a_slot_freed_by_a_pop_is_reused_safely_by_the_next_push() {
     Scenario {
         capacity: 1,
-        prefill: None,
+        prefill: &[],
         threads: &[&[Some(0)], &[Some(1)], &[None]],
-        // Unbounded, this did not finish in ten minutes; bounded, it takes seconds.
+        // Unbounded, this did not finish in twenty minutes; bounded, it takes seconds.
         preemption_bound: Some(3),
     }
     .check();
 }
 
 /// Each thread pushes, then pops. At least one of the pops finds a value; both
-/// finding the queue empty fits no sequential order. This is the case the `SeqCst`
-/// fences are for.
+/// finding the queue empty fits no sequential order. This is the case the fence
+/// in the empty check is for.
 #[test]
 fn a_pop_after_a_push_on_each_thread_cannot_find_both_empty() {
     Scenario {
         capacity: 2,
-        prefill: None,
+        prefill: &[],
         threads: &[&[Some(0), None], &[Some(1), None]],
+        preemption_bound: None,
+    }
+    .check();
+}
+
+/// Two slots holding one value. One thread pops twice, the other pushes twice.
+/// The second pop finding the queue empty while the second push finds it full
+/// fits no sequential order: the full answer needs the first value still in the
+/// queue after both pushes, and then the second pop would find a value. Each
+/// answer is reached through the fence in its check reading the other side's
+/// index, so this is the case the fence in the full check is for.
+#[test]
+fn a_stale_full_and_a_stale_empty_answer_cannot_meet() {
+    Scenario {
+        capacity: 2,
+        prefill: &[9],
+        threads: &[&[None, None], &[Some(0), Some(1)]],
+        preemption_bound: None,
+    }
+    .check();
+}
+
+/// The mirror of the push-then-pop scenario: a full queue of two slots, and each
+/// thread pops, then pushes. The second pop has taken the second value before
+/// its own thread pushes, so after the first pop the queue never holds two
+/// values again, and a push finding it full fits no sequential order. The wrong
+/// answer comes from a push that reads the `tail` the other thread's push wrote
+/// but not the `head` its pop wrote before that. The fence in the full check,
+/// after the load of `tail`, acquires the compare-and-swap that wrote it, so this
+/// is the case that compare-and-swap's Release half is for. The second thread's
+/// last pop is only there so that a pop can return a value a spawned thread
+/// pushed, which `check` requires.
+#[test]
+fn a_push_after_a_pop_on_each_thread_cannot_find_the_queue_full() {
+    Scenario {
+        capacity: 2,
+        prefill: &[8, 9],
+        threads: &[&[None, Some(0)], &[None, Some(1), None]],
         preemption_bound: None,
     }
     .check();

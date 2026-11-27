@@ -219,7 +219,10 @@ impl<T> ArrayQueue<T> {
             if stamp == tail {
                 // SeqCst success: the empty check in `pop` puts a SeqCst fence before
                 // reading `tail`, and a SeqCst operation is what such a fence is
-                // ordered against. Relaxed failure: the value is only a new guess.
+                // ordered against. Its Release half matters too: a push that read
+                // this `tail` acquires it through the fence in its full check, and
+                // then sees the `head` this thread's earlier pops moved. Relaxed
+                // failure: the value is only a new guess.
                 match self.tail.compare_exchange_weak(
                     tail,
                     self.next(tail),
@@ -288,7 +291,10 @@ impl<T> ArrayQueue<T> {
             let stamp = slot.stamp.load(Ordering::Acquire);
             if stamp == head + 1 {
                 // SeqCst success: pairs with the SeqCst fence in `push`'s full check,
-                // as that fence's comment says. Relaxed failure: only a new guess.
+                // as that fence's comment says. Its Release half matters too, the
+                // same way as on `tail`: a pop that read this `head` sees the `tail`
+                // this thread's earlier pushes moved. Relaxed failure: only a new
+                // guess.
                 match self.head.compare_exchange_weak(
                     head,
                     self.next(head),
